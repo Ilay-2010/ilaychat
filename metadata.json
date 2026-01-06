@@ -1,0 +1,5 @@
+{
+  "name": "ilaychat",
+  "description": "A real-time public dark-themed chat application built with React, Tailwind CSS, and Supabase.",
+  "requestFramePermissions": []
+}
