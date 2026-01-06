@@ -16,12 +16,12 @@ export const Auth: React.FC = () => {
     e.preventDefault();
     
     if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.length < 20) {
-      setError("Konfigurationsfehler: API Key fehlt.");
+      setError("Configuration Error: API Key missing.");
       return;
     }
 
     if (isRegister && !acceptedTerms) {
-      setError("Bitte akzeptiere die Nutzungsbedingungen.");
+      setError("Please accept the Terms of Service.");
       return;
     }
 
@@ -31,11 +31,22 @@ export const Auth: React.FC = () => {
 
     try {
       if (isRegister) {
+        // ENFORCE UNIQUE USERNAME CHECK
+        const { data: existingUser } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', username.trim())
+          .maybeSingle();
+
+        if (existingUser) {
+          throw new Error("This username is already taken.");
+        }
+
         const { error: signUpError, data } = await supabase.auth.signUp({
           email,
           password,
           options: { 
-            data: { username },
+            data: { username: username.trim() },
             emailRedirectTo: window.location.origin 
           }
         });
@@ -43,10 +54,8 @@ export const Auth: React.FC = () => {
         if (signUpError) throw signUpError;
         
         if (data?.user) {
-          // Hinweis: Supabase sendet bei neuer Registrierung oft eine Bestätigungsmail
-          // Wenn "Confirm Email" in Supabase aktiv ist, ist der User noch nicht eingeloggt.
           setIsRegister(false);
-          setSuccessMsg("Account erstellt! Bitte bestätige deine E-Mail (auch im Spam-Ordner schauen).");
+          setSuccessMsg("Account created! Please check your email (including spam) to confirm.");
           setUsername('');
           setEmail('');
           setPassword('');
@@ -58,24 +67,23 @@ export const Auth: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Auth error:", err);
-      
       const msg = err.message || "";
       
       if (isRegister) {
         if (msg.includes("User already registered")) {
-          setError("Diese E-Mail Adresse wird bereits verwendet.");
+          setError("This email address is already in use.");
         } else if (msg.includes("Password should be")) {
-          setError("Das Passwort ist zu kurz (mind. 6 Zeichen).");
+          setError("Password is too short (min. 6 characters).");
         } else {
-          setError(`Registrierung fehlgeschlagen: ${msg}`);
+          setError(msg || `Registration failed.`);
         }
       } else {
         if (err.status === 400 || err.status === 401) {
-          setError("Login fehlgeschlagen: E-Mail oder Passwort falsch.");
+          setError("Login failed: Incorrect email or password.");
         } else if (msg.includes("Email not confirmed")) {
-          setError("Bitte bestätige zuerst deine E-Mail Adresse.");
+          setError("Please confirm your email address first.");
         } else {
-          setError(`Fehler: ${msg}`);
+          setError(`Error: ${msg}`);
         }
       }
     } finally {
@@ -87,14 +95,14 @@ export const Auth: React.FC = () => {
     <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-black z-[1000]">
       <div className="w-full max-w-[400px] animate-slide-up text-center mb-8">
         <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tighter text-white mb-4">
-          {isRegister ? 'Erstelle deinen' : 'Login zum'} <br/><span className="text-white/40">Account.</span>
+          {isRegister ? 'Create your' : 'Login to your'} <br/><span className="text-white/40">Account.</span>
         </h1>
       </div>
 
       <div className="w-full max-w-[380px] bg-[#0a0a0a] border border-white/10 p-8 rounded-3xl shadow-2xl relative animate-slide-up" style={{animationDelay: '0.1s'}}>
         {error && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center leading-relaxed">
-            <span className="block mb-1">⚠️ HINWEIS</span>
+            <span className="block mb-1">⚠️ NOTE</span>
             {error}
           </div>
         )}
@@ -109,7 +117,7 @@ export const Auth: React.FC = () => {
           {isRegister && (
             <input
               type="text"
-              placeholder="Nutzername"
+              placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-black border border-white/5 focus:border-white/20 rounded-xl px-4 py-3.5 text-white text-sm outline-none transition-all placeholder:text-white/20"
@@ -118,7 +126,7 @@ export const Auth: React.FC = () => {
           )}
           <input
             type="email"
-            placeholder="E-Mail Adresse"
+            placeholder="Email Address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full bg-black border border-white/5 focus:border-white/20 rounded-xl px-4 py-3.5 text-white text-sm outline-none transition-all placeholder:text-white/20"
@@ -126,7 +134,7 @@ export const Auth: React.FC = () => {
           />
           <input
             type="password"
-            placeholder="Passwort"
+            placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full bg-black border border-white/5 focus:border-white/20 rounded-xl px-4 py-3.5 text-white text-sm outline-none transition-all placeholder:text-white/20"
@@ -144,7 +152,7 @@ export const Auth: React.FC = () => {
                 required
               />
               <label htmlFor="terms" className="text-[9px] leading-tight text-white/30 font-medium cursor-pointer hover:text-white/50 transition-colors">
-                Ich akzeptiere die Bedingungen. System-relevante Daten (wie IP) werden zur Sicherheit erhoben.
+                I accept the terms. System-relevant data (like IP) will be collected for security purposes.
               </label>
             </div>
           )}
@@ -156,7 +164,7 @@ export const Auth: React.FC = () => {
               className="w-full bg-white text-black font-black py-4 rounded-xl hover:bg-neutral-200 active:scale-[0.98] transition-all text-[11px] uppercase tracking-widest flex items-center justify-center gap-3"
             >
               {loading && <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>}
-              {loading ? 'Verarbeite...' : (isRegister ? 'Registrieren' : 'Anmelden')}
+              {loading ? 'Processing...' : (isRegister ? 'Register' : 'Sign In')}
             </button>
           </div>
         </form>
@@ -170,7 +178,7 @@ export const Auth: React.FC = () => {
             }}
             className="text-white/40 hover:text-white text-[10px] font-black uppercase tracking-widest transition-colors"
           >
-            {isRegister ? 'Bereits einen Account? Login' : "Noch kein Account? Sign up"}
+            {isRegister ? 'Already have an account? Login' : "No account yet? Sign up"}
           </button>
         </div>
       </div>
