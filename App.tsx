@@ -11,19 +11,19 @@ import { Profile } from './types';
 const LoadingScreen: React.FC = () => {
   return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-black overflow-hidden relative">
+      {/* Hintergrund-Glow für Tiefe */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-white/5 rounded-full blur-[100px] animate-pulse"></div>
-      <div className="relative w-20 h-20 mb-10">
-        <div className="absolute inset-0 border-t-2 border-white rounded-full animate-spin [animation-duration:0.6s]"></div>
-        <div className="absolute inset-2 border-r-2 border-white/20 rounded-full animate-spin [animation-duration:1s] [animation-direction:reverse]"></div>
-        <div className="absolute inset-4 border-b-2 border-white/40 rounded-full animate-spin [animation-duration:1.5s]"></div>
+      
+      {/* Animierter Spinner */}
+      <div className="relative w-16 h-16 mb-8">
+        <div className="absolute inset-0 border-t-2 border-white rounded-full animate-spin [animation-duration:0.8s]"></div>
+        <div className="absolute inset-2 border-r-2 border-white/20 rounded-full animate-spin [animation-duration:1.2s] [animation-direction:reverse]"></div>
       </div>
-      <div className="flex flex-col items-center gap-2">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.5em] text-white animate-pulse">ilay.chat</h2>
-        <div className="flex gap-1 items-center">
-          <span className="w-1 h-1 bg-white/20 rounded-full animate-bounce [animation-delay:0s]"></span>
-          <span className="w-1 h-1 bg-white/40 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-          <span className="w-1 h-1 bg-white/60 rounded-full animate-bounce [animation-delay:0.4s]"></span>
-        </div>
+
+      <div className="flex flex-col items-center gap-3">
+        <h2 className="text-[12px] font-black uppercase tracking-[0.6em] text-white animate-pulse">ilay.chat</h2>
+        <div className="h-[1px] w-12 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+        <div className="text-[7px] text-white/30 uppercase font-bold tracking-[0.3em]">Establishing Secure Connection</div>
       </div>
     </div>
   );
@@ -50,59 +50,65 @@ const App: React.FC = () => {
     localStorage.setItem('message_bubble_color', messageColor);
   }, [messageColor]);
 
-  const checkBans = async (userId?: string) => {
+  // Läuft asynchron im Hintergrund, blockiert nicht die App
+  const performBanCheck = async (userId?: string) => {
     try {
-      // IP abrufen
-      const ipResponse = await fetch('https://api.ipify.org?format=json').catch(() => null);
+      // IP abrufen (mit kurzem Timeout)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      
+      const ipResponse = await fetch('https://api.ipify.org?format=json', { signal: controller.signal }).catch(() => null);
+      clearTimeout(timeoutId);
+
       if (ipResponse && ipResponse.ok) {
         const ipData = await ipResponse.json();
         setUserIp(ipData.ip);
-        // IP-Ban Check (Ignoriert 404 Fehler, falls Tabelle nicht existiert)
-        const { data: ipBanData, error: ipError } = await supabase.from('banned_ips').select('ip').eq('ip', ipData.ip).maybeSingle();
-        if (ipBanData && !ipError) { setIsIpBanned(true); return true; }
+        // Prüfe IP-Ban (Supabase darf hier Fehler werfen, falls Tabelle fehlt)
+        const { data: ipBan } = await supabase.from('banned_ips').select('ip').eq('ip', ipData.ip).maybeSingle();
+        if (ipBan) setIsIpBanned(true);
       }
 
       if (userId) {
-        // User-Ban Check (Ignoriert 404 Fehler, falls Tabelle nicht existiert)
-        const { data: userBanData, error: userError } = await supabase.from('banned_users').select('user_id').eq('user_id', userId).maybeSingle();
-        if (userBanData && !userError) { setIsUserBanned(true); return true; }
+        const { data: userBan } = await supabase.from('banned_users').select('user_id').eq('user_id', userId).maybeSingle();
+        if (userBan) setIsUserBanned(true);
       }
-    } catch (err) {
-      // Wenn Tabellen nicht existieren, erlauben wir den Zugriff erstmal (Bootstrap Phase)
-      console.warn("Ban-Check übersprungen (evtl. Tabellen noch nicht angelegt)");
+    } catch (e) {
+      console.warn("Security background check partially failed (normal if tables don't exist yet)");
     }
-    return false;
   };
 
   useEffect(() => {
+    // DER ENTSCHEIDENDE TIMER: Nach genau 2 Sekunden wird die App eingeblendet
+    const forceStartTimer = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
+
     const initializeApp = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const isBanned = await checkBans(session?.user?.id);
-        if (!isBanned) setUser(session?.user ?? null);
-        else if (session?.user) { await supabase.auth.signOut(); setUser(null); }
+        setUser(session?.user ?? null);
+        if (session?.user) performBanCheck(session.user.id);
       } catch (err) { 
-        console.error("Init Error:", err); 
-      } finally {
-        setLoading(false);
+        console.error("App Init Error:", err); 
       }
     };
+
     initializeApp();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const isBanned = await checkBans(session.user.id);
-        if (!isBanned) setUser(session.user); else { setUser(null); await supabase.auth.signOut(); }
-      } else setUser(null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) performBanCheck(session.user.id);
     });
-    return () => subscription.unsubscribe();
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(forceStartTimer);
+    };
   }, []);
 
   const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      setUser(null);
-    } catch (err) {}
+    await supabase.auth.signOut();
+    setUser(null);
   };
 
   if (loading) return <LoadingScreen />;
@@ -110,8 +116,13 @@ const App: React.FC = () => {
   if (isIpBanned || isUserBanned) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-black p-6 text-center">
-        <h1 className="text-2xl font-black text-white uppercase tracking-tighter">Zugriff eingeschränkt</h1>
-        <p className="text-white/40 text-[10px] mt-4 uppercase tracking-[0.2em]">Sicherheits-Protokoll aktiv.</p>
+        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+          <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+        </div>
+        <h1 className="text-xl font-black text-white uppercase tracking-tighter">Zugriff verweigert</h1>
+        <p className="text-white/30 text-[9px] mt-4 uppercase tracking-[0.3em] max-w-[200px] leading-relaxed">
+          Deine IP oder dein Account wurde vom System gesperrt.
+        </p>
       </div>
     );
   }
@@ -120,7 +131,7 @@ const App: React.FC = () => {
   const isAdmin = displayName === 'Admin' || user?.email === 'admin@ilay.chat';
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-black text-white selection:bg-white/20 overflow-hidden relative font-['Inter']">
+    <div className="h-screen w-screen flex flex-col bg-black text-white overflow-hidden relative font-['Inter']">
       <nav className="fixed top-0 left-0 right-0 h-16 flex items-center justify-between px-4 md:px-6 z-[9999] border-b border-white/5 bg-black/80 backdrop-blur-2xl">
         <div className="flex items-center gap-3">
           <div 
@@ -159,20 +170,16 @@ const App: React.FC = () => {
           <div className="w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] p-8 shadow-2xl animate-slide-up">
             <h2 className="text-2xl font-black uppercase tracking-tighter mb-8">Interface</h2>
             <div className="space-y-10">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">Background</label>
-                  <input type="color" value={chatBgColor} onChange={(e) => setChatBgColor(e.target.value)} className="w-8 h-8 rounded-lg bg-transparent border-none cursor-pointer" />
-                </div>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">Chat Background</label>
+                <input type="color" value={chatBgColor} onChange={(e) => setChatBgColor(e.target.value)} className="w-8 h-8 rounded-lg bg-transparent border-none cursor-pointer" />
               </div>
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">Messages</label>
-                  <input type="color" value={messageColor} onChange={(e) => setMessageColor(e.target.value)} className="w-8 h-8 rounded-lg bg-transparent border-none cursor-pointer" />
-                </div>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">Bubble Color</label>
+                <input type="color" value={messageColor} onChange={(e) => setMessageColor(e.target.value)} className="w-8 h-8 rounded-lg bg-transparent border-none cursor-pointer" />
               </div>
             </div>
-            <button onClick={() => setShowSettings(false)} className="w-full mt-12 bg-white text-black font-black uppercase py-5 rounded-[1.5rem] text-[11px] tracking-widest hover:bg-neutral-200 transition-all active:scale-95 shadow-xl shadow-white/5">Fertig</button>
+            <button onClick={() => setShowSettings(false)} className="w-full mt-12 bg-white text-black font-black uppercase py-5 rounded-[1.5rem] text-[11px] tracking-widest hover:bg-neutral-200 transition-all">Fertig</button>
           </div>
         </div>
       )}
