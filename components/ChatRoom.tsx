@@ -21,7 +21,7 @@ interface ContextMenuState {
   message: Message;
 }
 
-const REACTIONS = ['🔥', '❤️', '😂', '😮', '👍'];
+const REACTIONS = ['🥀', '❤️', '😂', '💀', '👍'];
 
 export const ChatRoom: React.FC<ChatRoomProps> = ({ user, userIp, recipient, onBack, chatBg, bubbleColor }) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -37,6 +37,13 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ user, userIp, recipient, onB
 
   const currentUserDisplayName = user.user_metadata?.username || user.email?.split('@')[0] || 'User';
   const isGlobal = !recipient;
+
+  // AUTO-FOCUS AFTER COOLDOWN
+  useEffect(() => {
+    if (!cooldown && !loading) {
+      inputRef.current?.focus();
+    }
+  }, [cooldown, loading]);
 
   useEffect(() => {
     const fetchMessages = async () => {
