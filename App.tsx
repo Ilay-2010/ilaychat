@@ -68,7 +68,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // PROFESSIONELLER LADE-TIMER (Garantiert 2 Sekunden für den Look)
+    // PROFESSIONAL LOADING TIMER
     const timer = setTimeout(() => {
       setLoading(false);
     }, 2000);
@@ -101,8 +101,8 @@ const App: React.FC = () => {
   if (isIpBanned || isUserBanned) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-black p-6 text-center">
-        <h1 className="text-xl font-black text-white uppercase tracking-tighter">Zugriff verweigert</h1>
-        <p className="text-white/30 text-[9px] mt-4 uppercase tracking-[0.3em]">System-Sperre aktiv.</p>
+        <h1 className="text-xl font-black text-white uppercase tracking-tighter">Access Denied</h1>
+        <p className="text-white/30 text-[9px] mt-4 uppercase tracking-[0.3em]">System Restriction Active.</p>
       </div>
     );
   }
@@ -150,7 +150,7 @@ const App: React.FC = () => {
                 <input type="color" value={messageColor} onChange={(e) => setMessageColor(e.target.value)} className="w-8 h-8 bg-transparent cursor-pointer" />
               </div>
             </div>
-            <button onClick={() => setShowSettings(false)} className="w-full mt-12 bg-white text-black font-black uppercase py-5 rounded-[1.5rem] text-[11px] tracking-widest">Fertig</button>
+            <button onClick={() => setShowSettings(false)} className="w-full mt-12 bg-white text-black font-black uppercase py-5 rounded-[1.5rem] text-[11px] tracking-widest">Done</button>
           </div>
         </div>
       )}
