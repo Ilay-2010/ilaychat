@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabase';
 import { Auth } from './components/Auth';
@@ -24,14 +25,6 @@ const LoadingScreen: React.FC = () => {
           <span className="w-1 h-1 bg-white/60 rounded-full animate-bounce [animation-delay:0.4s]"></span>
         </div>
       </div>
-      <style>{`
-        @keyframes slideUp {
-          0%, 20% { transform: translateY(0); }
-          25%, 45% { transform: translateY(-1rem); }
-          50%, 70% { transform: translateY(-2rem); }
-          75%, 100% { transform: translateY(-3rem); }
-        }
-      `}</style>
     </div>
   );
 };
@@ -59,38 +52,40 @@ const App: React.FC = () => {
 
   const checkBans = async (userId?: string) => {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1500);
-      const ipResponse = await fetch('https://api.ipify.org?format=json', { signal: controller.signal }).catch(() => null);
-      clearTimeout(timeoutId);
+      // IP abrufen
+      const ipResponse = await fetch('https://api.ipify.org?format=json').catch(() => null);
       if (ipResponse && ipResponse.ok) {
         const ipData = await ipResponse.json();
         setUserIp(ipData.ip);
-        try {
-          const { data: ipBanData } = await supabase.from('banned_ips').select('ip').eq('ip', ipData.ip).maybeSingle();
-          if (ipBanData) { setIsIpBanned(true); return true; }
-        } catch (e) {}
+        // IP-Ban Check (Ignoriert 404 Fehler, falls Tabelle nicht existiert)
+        const { data: ipBanData, error: ipError } = await supabase.from('banned_ips').select('ip').eq('ip', ipData.ip).maybeSingle();
+        if (ipBanData && !ipError) { setIsIpBanned(true); return true; }
       }
+
       if (userId) {
-        try {
-          const { data: userBanData } = await supabase.from('banned_users').select('user_id').eq('user_id', userId).maybeSingle();
-          if (userBanData) { setIsUserBanned(true); return true; }
-        } catch (e) {}
+        // User-Ban Check (Ignoriert 404 Fehler, falls Tabelle nicht existiert)
+        const { data: userBanData, error: userError } = await supabase.from('banned_users').select('user_id').eq('user_id', userId).maybeSingle();
+        if (userBanData && !userError) { setIsUserBanned(true); return true; }
       }
-    } catch (err) { }
+    } catch (err) {
+      // Wenn Tabellen nicht existieren, erlauben wir den Zugriff erstmal (Bootstrap Phase)
+      console.warn("Ban-Check übersprungen (evtl. Tabellen noch nicht angelegt)");
+    }
     return false;
   };
 
   useEffect(() => {
     const initializeApp = async () => {
-      const forceLoadTimer = setTimeout(() => setLoading(false), 1800);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const isBanned = await checkBans(session?.user?.id);
         if (!isBanned) setUser(session?.user ?? null);
         else if (session?.user) { await supabase.auth.signOut(); setUser(null); }
-      } catch (err) { console.error("Init Error:", err); }
-      return () => clearTimeout(forceLoadTimer);
+      } catch (err) { 
+        console.error("Init Error:", err); 
+      } finally {
+        setLoading(false);
+      }
     };
     initializeApp();
 
@@ -115,11 +110,8 @@ const App: React.FC = () => {
   if (isIpBanned || isUserBanned) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-black p-6 text-center">
-        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20">
-          <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0-6V7m0 10a9 9 0 110-18 9 9 0 010 18z" /></svg>
-        </div>
-        <h1 className="text-2xl font-black text-white uppercase tracking-tighter">Access Restricted</h1>
-        <p className="text-white/40 text-[10px] mt-4 uppercase tracking-[0.2em] max-w-xs leading-relaxed">Security protocols have flagged this session.</p>
+        <h1 className="text-2xl font-black text-white uppercase tracking-tighter">Zugriff eingeschränkt</h1>
+        <p className="text-white/40 text-[10px] mt-4 uppercase tracking-[0.2em]">Sicherheits-Protokoll aktiv.</p>
       </div>
     );
   }
@@ -165,32 +157,22 @@ const App: React.FC = () => {
       {showSettings && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md">
           <div className="w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] p-8 shadow-2xl animate-slide-up">
-            <h2 className="text-2xl font-black uppercase tracking-tighter mb-8">Custom Interface</h2>
+            <h2 className="text-2xl font-black uppercase tracking-tighter mb-8">Interface</h2>
             <div className="space-y-10">
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">Background Color</label>
+                  <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">Background</label>
                   <input type="color" value={chatBgColor} onChange={(e) => setChatBgColor(e.target.value)} className="w-8 h-8 rounded-lg bg-transparent border-none cursor-pointer" />
-                </div>
-                <div className="grid grid-cols-4 gap-3">
-                  {['#000000', '#0b0b0b', '#161616', '#1e3a8a'].map(c => (
-                    <button key={c} onClick={() => setChatBgColor(c)} className={`aspect-square rounded-2xl border-2 transition-all ${chatBgColor === c ? 'border-white scale-105' : 'border-white/5'}`} style={{ backgroundColor: c }} />
-                  ))}
                 </div>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">Message Bubble</label>
+                  <label className="text-[10px] font-black uppercase text-white/30 tracking-[0.2em]">Messages</label>
                   <input type="color" value={messageColor} onChange={(e) => setMessageColor(e.target.value)} className="w-8 h-8 rounded-lg bg-transparent border-none cursor-pointer" />
-                </div>
-                <div className="grid grid-cols-4 gap-3">
-                  {['#111111', '#222222', '#2a2a2a', '#312e81'].map(c => (
-                    <button key={c} onClick={() => setMessageColor(c)} className={`aspect-square rounded-2xl border-2 transition-all ${messageColor === c ? 'border-white scale-105' : 'border-white/5'}`} style={{ backgroundColor: c }} />
-                  ))}
                 </div>
               </div>
             </div>
-            <button onClick={() => setShowSettings(false)} className="w-full mt-12 bg-white text-black font-black uppercase py-5 rounded-[1.5rem] text-[11px] tracking-widest hover:bg-neutral-200 transition-all active:scale-95 shadow-xl shadow-white/5">Save Configuration</button>
+            <button onClick={() => setShowSettings(false)} className="w-full mt-12 bg-white text-black font-black uppercase py-5 rounded-[1.5rem] text-[11px] tracking-widest hover:bg-neutral-200 transition-all active:scale-95 shadow-xl shadow-white/5">Fertig</button>
           </div>
         </div>
       )}
