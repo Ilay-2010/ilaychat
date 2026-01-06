@@ -15,9 +15,8 @@ export const Auth: React.FC = () => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Einfache Prüfung ob überhaupt ein Key da ist
     if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.length < 20) {
-      setError("Kein API Key gefunden. Bitte füge deinen Supabase Key in 'services/supabase.ts' ein.");
+      setError("Konfigurationsfehler: API Key fehlt.");
       return;
     }
 
@@ -44,8 +43,10 @@ export const Auth: React.FC = () => {
         if (signUpError) throw signUpError;
         
         if (data?.user) {
+          // Hinweis: Supabase sendet bei neuer Registrierung oft eine Bestätigungsmail
+          // Wenn "Confirm Email" in Supabase aktiv ist, ist der User noch nicht eingeloggt.
           setIsRegister(false);
-          setSuccessMsg("Account erstellt! Bitte checke deine E-Mails (auch Spam), um den Account zu bestätigen.");
+          setSuccessMsg("Account erstellt! Bitte bestätige deine E-Mail (auch im Spam-Ordner schauen).");
           setUsername('');
           setEmail('');
           setPassword('');
@@ -57,15 +58,25 @@ export const Auth: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Auth error:", err);
-      // Spezifische Fehlerbehandlung für bessere User-Experience
-      if (err.message?.includes("Email not confirmed")) {
-        setError("Bitte bestätige zuerst deine E-Mail Adresse in deinem Postfach.");
-      } else if (err.status === 401 || err.status === 400) {
-        setError("Login fehlgeschlagen: E-Mail oder Passwort falsch.");
-      } else if (err.message?.includes("Failed to fetch")) {
-        setError("Netzwerkfehler: Verbindung zu Supabase nicht möglich. Prüfe deine Internetverbindung.");
+      
+      const msg = err.message || "";
+      
+      if (isRegister) {
+        if (msg.includes("User already registered")) {
+          setError("Diese E-Mail Adresse wird bereits verwendet.");
+        } else if (msg.includes("Password should be")) {
+          setError("Das Passwort ist zu kurz (mind. 6 Zeichen).");
+        } else {
+          setError(`Registrierung fehlgeschlagen: ${msg}`);
+        }
       } else {
-        setError(err.message || "Ein unerwarteter Fehler ist aufgetreten.");
+        if (err.status === 400 || err.status === 401) {
+          setError("Login fehlgeschlagen: E-Mail oder Passwort falsch.");
+        } else if (msg.includes("Email not confirmed")) {
+          setError("Bitte bestätige zuerst deine E-Mail Adresse.");
+        } else {
+          setError(`Fehler: ${msg}`);
+        }
       }
     } finally {
       setLoading(false);
