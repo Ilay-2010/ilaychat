@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { supabase } from '../services/supabase';
+import { supabase, SUPABASE_ANON_KEY } from '../services/supabase';
 
 export const Auth: React.FC = () => {
   const [isRegister, setIsRegister] = useState(false);
@@ -15,6 +15,12 @@ export const Auth: React.FC = () => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Einfache Prüfung ob überhaupt ein Key da ist
+    if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.length < 20) {
+      setError("Kein API Key gefunden. Bitte füge deinen Supabase Key in 'services/supabase.ts' ein.");
+      return;
+    }
+
     if (isRegister && !acceptedTerms) {
       setError("Bitte akzeptiere die Nutzungsbedingungen.");
       return;
@@ -24,14 +30,9 @@ export const Auth: React.FC = () => {
     setError(null);
     setSuccessMsg(null);
 
-    // Timeout-Logic: Wenn Supabase nach 12s nicht antwortet, brechen wir ab
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Verbindung zu Supabase zu langsam oder ungültiger API Key.")), 12000)
-    );
-
     try {
       if (isRegister) {
-        const signUpPromise = supabase.auth.signUp({
+        const { error: signUpError, data } = await supabase.auth.signUp({
           email,
           password,
           options: { 
@@ -39,12 +40,10 @@ export const Auth: React.FC = () => {
             emailRedirectTo: window.location.origin 
           }
         });
-
-        const { error, data }: any = await Promise.race([signUpPromise, timeoutPromise]);
         
-        if (error) throw error;
+        if (signUpError) throw signUpError;
         
-        if (data.user) {
+        if (data?.user) {
           setIsRegister(false);
           setSuccessMsg("Account erstellt! Bitte checke deine E-Mails (auch Spam), um den Account zu bestätigen.");
           setUsername('');
@@ -53,18 +52,20 @@ export const Auth: React.FC = () => {
           setAcceptedTerms(false);
         }
       } else {
-        const signInPromise = supabase.auth.signInWithPassword({ email, password });
-        const { error }: any = await Promise.race([signInPromise, timeoutPromise]);
-        if (error) throw error;
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
       }
     } catch (err: any) {
       console.error("Auth error:", err);
+      // Spezifische Fehlerbehandlung für bessere User-Experience
       if (err.message?.includes("Email not confirmed")) {
-        setError("Bitte bestätige zuerst deine E-Mail Adresse.");
-      } else if (err.message?.includes("Invalid login credentials")) {
-        setError("E-Mail oder Passwort falsch.");
+        setError("Bitte bestätige zuerst deine E-Mail Adresse in deinem Postfach.");
+      } else if (err.status === 401 || err.status === 400) {
+        setError("Login fehlgeschlagen: E-Mail oder Passwort falsch.");
+      } else if (err.message?.includes("Failed to fetch")) {
+        setError("Netzwerkfehler: Verbindung zu Supabase nicht möglich. Prüfe deine Internetverbindung.");
       } else {
-        setError(err.message || "Ein unbekannter Fehler ist aufgetreten.");
+        setError(err.message || "Ein unerwarteter Fehler ist aufgetreten.");
       }
     } finally {
       setLoading(false);
@@ -82,8 +83,8 @@ export const Auth: React.FC = () => {
       <div className="w-full max-w-[380px] bg-[#0a0a0a] border border-white/10 p-8 rounded-3xl shadow-2xl relative animate-slide-up" style={{animationDelay: '0.1s'}}>
         {error && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center leading-relaxed">
+            <span className="block mb-1">⚠️ HINWEIS</span>
             {error}
-            <div className="mt-2 opacity-50 font-normal">Tipp: Prüfe, ob dein Supabase Key in services/supabase.ts korrekt ist.</div>
           </div>
         )}
 
@@ -146,16 +147,6 @@ export const Auth: React.FC = () => {
               {loading && <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>}
               {loading ? 'Verarbeite...' : (isRegister ? 'Registrieren' : 'Anmelden')}
             </button>
-
-            {loading && (
-              <button 
-                type="button" 
-                onClick={() => setLoading(false)}
-                className="w-full text-[9px] font-bold text-white/20 uppercase tracking-widest hover:text-white/40 transition-colors"
-              >
-                Abbrechen
-              </button>
-            )}
           </div>
         </form>
 
@@ -174,7 +165,7 @@ export const Auth: React.FC = () => {
       </div>
       
       <p className="mt-8 text-white/10 text-[9px] uppercase tracking-[0.4em] font-black">
-        Encrypted by Supabase
+        ilay.chat secure access
       </p>
     </div>
   );
